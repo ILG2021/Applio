@@ -268,13 +268,24 @@ def refresh_presets():
     return gr.update(choices=json_files)
 
 
-def output_path_fn(input_audio_path):
-    original_name_without_extension = os.path.basename(input_audio_path).rsplit(".", 1)[
-        0
-    ]
-    new_name = original_name_without_extension + "_output.wav"
-    output_path = os.path.join(os.path.dirname(input_audio_path), new_name)
-    return output_path
+def _safe_filename_part(value):
+    value = str(value or "").strip()
+    value = re.sub(r"[\\/:*?\"<>|]+", "_", value)
+    return value.strip(" ._") or "unknown"
+
+
+def output_path_fn(input_audio_path, model_file=None, index_rate=0.75):
+    if not input_audio_path:
+        return os.path.join(audio_root_relative, "output.wav")
+
+    reference_name = os.path.splitext(os.path.basename(input_audio_path))[0]
+    model_name = os.path.basename(str(model_file or "")).rsplit(".", 1)[0]
+    new_name = "{}_{}_{}.wav".format(
+        _safe_filename_part(model_name),
+        _safe_filename_part(reference_name),
+        _safe_filename_part(f"{float(index_rate):.2f}"),
+    )
+    return os.path.join(os.path.dirname(input_audio_path), new_name)
 
 
 def change_choices(model):
@@ -713,6 +724,7 @@ def inference_tab():
                     value=audio_paths[0] if audio_paths else "",
                     interactive=True,
                     allow_custom_value=True,
+                    visible=False,
                 )
 
         with gr.Accordion(i18n("Advanced Settings"), open=False):
@@ -727,11 +739,12 @@ def inference_tab():
                         "The path where the output audio will be saved, by default in assets/audios/output.wav"
                     ),
                     value=(
-                        output_path_fn(audio_paths[0])
+                        output_path_fn(audio_paths[0], model_file.value, 0.75)
                         if audio_paths
                         else os.path.join(now_dir, "assets", "audios", "output.wav")
                     ),
-                    interactive=True,
+                    interactive=False,
+                    visible=False,
                 )
                 export_format = gr.Radio(
                     label=i18n("Export Format"),
@@ -1338,7 +1351,7 @@ def inference_tab():
             info=i18n(
                 "Please ensure compliance with the terms and conditions detailed in [this document](https://github.com/IAHispano/Applio/blob/main/TERMS_OF_USE.md) before proceeding with your inference."
             ),
-            value=False,
+            value=True,
             interactive=True,
         )
 
@@ -1352,7 +1365,7 @@ def inference_tab():
             vc_output2 = gr.Audio(label=i18n("Export Audio"))
 
     # Batch inference tab
-    with gr.Tab(i18n("Batch")):
+    with gr.Tab(i18n("Batch"), visible=False):
         with gr.Row():
             with gr.Column():
                 input_folder_batch = gr.Textbox(
@@ -1958,7 +1971,7 @@ def inference_tab():
             info=i18n(
                 "Please ensure compliance with the terms and conditions detailed in [this document](https://github.com/IAHispano/Applio/blob/main/TERMS_OF_USE.md) before proceeding with your inference."
             ),
-            value=False,
+            value=True,
             interactive=True,
         )
         convert_button_batch = gr.Button(i18n("Convert"))
@@ -2292,7 +2305,17 @@ def inference_tab():
     )
     audio.change(
         fn=output_path_fn,
-        inputs=[audio],
+        inputs=[audio, model_file, index_rate],
+        outputs=[output_path],
+    )
+    model_file.change(
+        fn=output_path_fn,
+        inputs=[audio, model_file, index_rate],
+        outputs=[output_path],
+    )
+    index_rate.change(
+        fn=output_path_fn,
+        inputs=[audio, model_file, index_rate],
         outputs=[output_path],
     )
     upload_audio.upload(
