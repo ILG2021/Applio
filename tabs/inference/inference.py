@@ -670,6 +670,13 @@ def inference_tab():
                 interactive=True,
                 allow_custom_value=not deployment_mode,
             )
+            sid = gr.Dropdown(
+                label=i18n(speaker_label),
+                info=i18n("Select the singer to use for the conversion."),
+                choices=get_speaker_choices(model_file.value),
+                value=get_speaker_choices(model_file.value)[0],
+                interactive=True,
+            )
             filter_box_inf = gr.Textbox(
                 label=i18n("Filter"),
                 info=i18n("Path must contain:"),
@@ -713,9 +720,11 @@ def inference_tab():
     # Single inference tab
     with gr.Tab(i18n("Single")):
         with gr.Column():
-            upload_audio = gr.Audio(
-                label=i18n("Upload Audio"), type="filepath", editable=False
-            )
+            with gr.Row():
+                upload_audio = gr.Audio(
+                    label=i18n("Upload Audio"), type="filepath", editable=False
+                )
+                vc_output2 = gr.Audio(label=i18n("Export Audio"))
             with gr.Row():
                 audio = gr.Dropdown(
                     label=i18n("Select Audio"),
@@ -751,13 +760,6 @@ def inference_tab():
                     info=i18n("Select the format to export the audio."),
                     choices=["WAV", "MP3", "FLAC", "OGG", "M4A"],
                     value="WAV",
-                    interactive=True,
-                )
-                sid = gr.Dropdown(
-                    label=i18n(speaker_label),
-                    info=i18n("Select the singer to use for the conversion."),
-                    choices=get_speaker_choices(model_file.value),
-                    value=get_speaker_choices(model_file.value)[0],
                     interactive=True,
                 )
                 split_audio = gr.Checkbox(
@@ -1362,7 +1364,6 @@ def inference_tab():
                 label=i18n("Output Information"),
                 info=i18n("The output information will be displayed here."),
             )
-            vc_output2 = gr.Audio(label=i18n("Export Audio"))
 
     # Batch inference tab
     with gr.Tab(i18n("Batch"), visible=False):
