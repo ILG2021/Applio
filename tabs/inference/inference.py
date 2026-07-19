@@ -707,7 +707,8 @@ def inference_tab():
         )
         with gr.Row():
             unload_button = gr.Button(i18n("Unload Voice"))
-            refresh_button = gr.Button(i18n("Refresh"))
+            refresh_button = gr.Button(i18n("Refresh"), visible=False)
+            convert_button1 = gr.Button(i18n("Convert"))
 
             unload_button.click(
                 fn=lambda: (
@@ -1356,8 +1357,6 @@ def inference_tab():
             value=True,
             interactive=True,
         )
-
-        convert_button1 = gr.Button(i18n("Convert"))
 
         with gr.Row():
             vc_output1 = gr.Textbox(
