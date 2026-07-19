@@ -20,6 +20,29 @@ json_file_path = os.path.join(now_dir, "assets", "config.json")
 current_folders = os.listdir(plugins_path)
 
 
+def safe_extract(zip_ref, destination):
+    destination = os.path.abspath(destination)
+    for member in zip_ref.infolist():
+        member_name = member.filename.replace("\\\\", "/")
+        target = os.path.abspath(os.path.join(destination, member_name))
+
+        try:
+            is_within_destination = (
+                os.path.commonpath([destination, target]) == destination
+            )
+        except ValueError:
+            is_within_destination = False
+
+        if not is_within_destination:
+            raise ValueError(f"Unsafe ZIP member path: {member.filename}")
+
+        file_mode = (member.external_attr >> 16) & 0o170000
+        if file_mode == 0o120000:
+            raise ValueError(f"ZIP symlinks are not allowed: {member.filename}")
+
+    zip_ref.extractall(destination)
+
+
 def get_existing_folders():
     if os.path.exists(json_file_path):
         with open(json_file_path, "r", encoding="utf-8") as file:
@@ -55,7 +78,7 @@ def save_plugin_dropbox(dropbox):
         print("Proceeding with the extraction...")
 
         with zipfile.ZipFile(zip_file_path, "r") as zip_ref:
-            zip_ref.extractall(plugins_path)
+            safe_extract(zip_ref, plugins_path)
         os.remove(zip_file_path)
 
         if os.path.exists(os.path.join(folder_path, "requirements.txt")):

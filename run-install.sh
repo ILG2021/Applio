@@ -59,33 +59,10 @@ install_ffmpeg() {
         sudo pacman -Syu --noconfirm ffmpeg
     elif command -v dnf > /dev/null; then
         log_message "Installing FFmpeg using dnf..."
-        sudo dnf install -y ffmpeg --allowerasing || install_ffmpeg_flatpak
+        sudo dnf install -y ffmpeg --allowerasing
     else
-        log_message "Unsupported distribution for FFmpeg installation. Trying Flatpak..."
-        install_ffmpeg_flatpak
-    fi
-}
-
-# Function to install FFmpeg using Flatpak
-install_ffmpeg_flatpak() {
-    if command -v flatpak > /dev/null; then
-        log_message "Installing FFmpeg using Flatpak..."
-        flatpak install --user -y flathub org.freedesktop.Platform.ffmpeg
-    else
-        log_message "Flatpak is not installed. Installing Flatpak..."
-        if command -v apt > /dev/null; then
-            sudo apt install -y flatpak
-        elif command -v pacman > /dev/null; then
-            sudo pacman -Syu --noconfirm flatpak
-        elif command -v dnf > /dev/null; then
-            sudo dnf install -y flatpak
-        elif command -v brew > /dev/null; then
-            brew install flatpak
-        else
-            log_message "Unable to install Flatpak automatically. Please install Flatpak and try again."
-            exit 1
-        fi
-        flatpak install --user -y flathub org.freedesktop.Platform.ffmpeg
+        log_error "Unsupported distribution for automatic FFmpeg installation. Please install FFmpeg manually."
+        exit 1
     fi
 }
 

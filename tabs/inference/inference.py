@@ -20,7 +20,12 @@ i18n = I18nAuto()
 now_dir = os.getcwd()
 sys.path.append(now_dir)
 
+deployment_mode = os.environ.get("APPLIO_INFER_DEPLOYMENT") == "1"
 model_root = os.path.join(now_dir, "logs")
+if deployment_mode:
+    model_root = os.path.abspath(
+        os.environ.get("APPLIO_INFER_MODEL_ROOT", os.path.join(now_dir, "models"))
+    )
 audio_root = os.path.join(now_dir, "assets", "audios")
 custom_embedder_root = os.path.join(
     now_dir, "rvc", "models", "embedders", "embedders_custom"
@@ -122,7 +127,56 @@ def get_files(type="model"):
     return [t[2] for t in sorted(best.values(), key=lambda x: x[1])]
 
 
-default_weight = next(iter(get_files("model")), None)
+def extract_model_and_epoch(path):
+    base_name = os.path.basename(path)
+    match = re.match(r"(.+?)_(\d+)e_", base_name)
+    if match:
+        model, epoch = match.groups()
+        return model, int(epoch)
+    return "", 0
+
+
+def get_model_choices():
+    if not deployment_mode:
+        return sorted(get_files("model"), key=extract_model_and_epoch)
+
+    try:
+        return sorted(
+            [entry.name for entry in os.scandir(model_root) if entry.is_dir()],
+            key=str.casefold,
+        )
+    except OSError:
+        return []
+
+
+def resolve_model_path(model):
+    """Resolve a deployment folder selection to its weight file."""
+    if not deployment_mode or not model:
+        return model
+
+    supplied_path = os.path.abspath(os.path.join(now_dir, str(model)))
+    if os.path.isfile(supplied_path):
+        return os.path.relpath(supplied_path, now_dir)
+
+    model_folder = os.path.abspath(os.path.join(model_root, str(model)))
+    if not os.path.isdir(model_folder):
+        return model
+
+    weights = sorted(
+        (
+            entry.path
+            for entry in os.scandir(model_folder)
+            if entry.is_file()
+            and entry.name.lower().endswith((".pth", ".onnx"))
+            and not entry.name.startswith(("G_", "D_"))
+        ),
+        key=lambda path: os.path.basename(path).casefold(),
+    )
+    return os.path.relpath(weights[0], now_dir) if weights else model
+
+
+default_model = next(iter(get_model_choices()), None)
+default_weight = resolve_model_path(default_model)
 
 audio_paths = [
     os.path.join(root, name)
@@ -225,11 +279,11 @@ def output_path_fn(input_audio_path):
 
 def change_choices(model):
     if model:
-        speakers = get_speakers_id(model)
+        speakers = get_speaker_choices(model)
     else:
         speakers = [0]
 
-    models_list = sorted(get_files("model"))
+    models_list = get_model_choices()
     indexes_list = sorted(get_files("index"))
 
     audio_paths = [
@@ -245,32 +299,9 @@ def change_choices(model):
         {"choices": models_list, "__type__": "update"},
         {"choices": indexes_list, "__type__": "update"},
         {"choices": sorted(audio_paths), "__type__": "update"},
-        {
-            "choices": (
-                sorted(speakers)
-                if speakers is not None and isinstance(speakers, (list, tuple))
-                else [0]
-            ),
-            "__type__": "update",
-        },
-        {
-            "choices": (
-                sorted(speakers)
-                if speakers is not None and isinstance(speakers, (list, tuple))
-                else [0]
-            ),
-            "__type__": "update",
-        },
+        _speaker_dropdown_update(speakers),
+        _speaker_dropdown_update(speakers),
     )
-
-
-def extract_model_and_epoch(path):
-    base_name = os.path.basename(path)
-    match = re.match(r"(.+?)_(\d+)e_", base_name)
-    if match:
-        model, epoch = match.groups()
-        return model, int(epoch)
-    return "", 0
 
 
 def save_to_wav(record_button):
@@ -346,6 +377,8 @@ def folders_same(
 def match_index(model_file_value):
     if not model_file_value:
         return ""
+
+    model_file_value = resolve_model_path(model_file_value)
 
     # Derive the information about the model's name and path for index matching
     model_folder = normalize_path(os.path.dirname(model_file_value))
@@ -464,6 +497,7 @@ def refresh_embedders_folders():
 def get_speakers_id(model):
     if model:
         try:
+            model = resolve_model_path(model)
             model_data = torch.load(
                 os.path.join(now_dir, model), map_location="cpu", weights_only=True
             )
@@ -478,9 +512,116 @@ def get_speakers_id(model):
         return [0]
 
 
+def _speaker_config(model):
+    if not model:
+        return {}
+
+    selected_folder = os.path.abspath(os.path.join(model_root, str(model)))
+    if deployment_mode and os.path.isdir(selected_folder):
+        model_folder = selected_folder
+    else:
+        model_path = os.path.abspath(
+            os.path.join(now_dir, str(resolve_model_path(model)))
+        )
+        model_folder = os.path.dirname(model_path)
+    for filename in ("speakers.json", "speaker.json", "speaker_config.json"):
+        config_path = os.path.join(model_folder, filename)
+        if not os.path.isfile(config_path):
+            continue
+        try:
+            with open(config_path, "r", encoding="utf-8") as file:
+                data = json.load(file)
+        except (OSError, json.JSONDecodeError):
+            return {}
+
+        if isinstance(data, dict):
+            entries = data.get(
+                "speakers",
+                data.get("speaker_embeddings", data.get("speaker_names", data)),
+            )
+            if entries is data and isinstance(data.get("speakers_id"), dict):
+                entries = data["speakers_id"]
+        else:
+            entries = data
+        mapping = {}
+
+        def speaker_id(value, fallback):
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return fallback
+
+        if isinstance(entries, list):
+            for position, entry in enumerate(entries):
+                if not isinstance(entry, dict):
+                    continue
+                raw_id = entry.get(
+                    "id", entry.get("speaker_id", entry.get("embedding", position))
+                )
+                name = entry.get("name", entry.get("speaker_name"))
+                if name is not None:
+                    mapping[str(name)] = speaker_id(raw_id, position)
+        elif isinstance(entries, dict):
+            for position, (key, entry) in enumerate(entries.items()):
+                if isinstance(entry, dict):
+                    raw_id = entry.get(
+                        "id", entry.get("speaker_id", entry.get("embedding", key))
+                    )
+                    name = entry.get("name", entry.get("speaker_name", key))
+                else:
+                    raw_id, name = key, entry
+                    if isinstance(key, str) and not key.isdigit():
+                        raw_id, name = entry, key
+                if name is not None:
+                    mapping[str(name)] = speaker_id(raw_id, position)
+        return mapping
+
+    return {}
+
+
+def get_speaker_choices(model):
+    if deployment_mode:
+        mapping = _speaker_config(model)
+        if mapping:
+            return list(mapping.keys())
+    return get_speakers_id(model)
+
+
+def _speaker_id(model, value):
+    mapping = _speaker_config(model)
+    if isinstance(value, str) and value in mapping:
+        return mapping[value]
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _speaker_dropdown_update(speakers):
+    choices = (
+        sorted(speakers, key=str)
+        if speakers is not None and isinstance(speakers, (list, tuple))
+        else [0]
+    )
+    return {
+        "choices": choices,
+        "value": choices[0],
+        "__type__": "update",
+    }
+
+
+def update_model_selection(model):
+    speakers = get_speaker_choices(model)
+    return (
+        match_index(model),
+        _speaker_dropdown_update(speakers),
+        _speaker_dropdown_update(speakers),
+    )
+
+
 def filter_dropdowns(filter_text):
     ft = (filter_text or "").lower()
-    all_models = sorted(get_files("model"), key=extract_model_and_epoch)
+    all_models = get_model_choices()
     all_indexes = sorted(get_files("index"))
     filtered_models = [m for m in all_models if ft in m.lower()]
     filtered_indexes = [i for i in all_indexes if ft in i.lower()]
@@ -499,15 +640,24 @@ def update_filter_visibility(_):
 # Inference tab
 def inference_tab():
     trigger = get_filter_trigger()
+    speaker_label = (
+        "Singer"
+        if deployment_mode
+        else i18n("Speaker ID")
+    )
     with gr.Column():
         with gr.Row():
             model_file = gr.Dropdown(
-                label=i18n("Voice Model"),
-                info=i18n("Select the voice model to use for the conversion."),
-                choices=sorted(get_files("model"), key=extract_model_and_epoch),
-                value=default_weight,
+                label=i18n("Model Folder") if deployment_mode else i18n("Voice Model"),
+                info=(
+                    i18n("Select a model folder from the models directory.")
+                    if deployment_mode
+                    else i18n("Select the voice model to use for the conversion.")
+                ),
+                choices=get_model_choices(),
+                value=default_model,
                 interactive=True,
-                allow_custom_value=True,
+                allow_custom_value=not deployment_mode,
             )
             filter_box_inf = gr.Textbox(
                 label=i18n("Filter"),
@@ -522,8 +672,9 @@ def inference_tab():
                 info=i18n("Select the index file to use for the conversion."),
                 choices=sorted(get_files("index")),
                 value=match_index(default_weight),
-                interactive=True,
+                interactive=not deployment_mode,
                 allow_custom_value=True,
+                visible=not deployment_mode,
             )
         filter_box_inf.blur(
             fn=filter_dropdowns,
@@ -548,12 +699,6 @@ def inference_tab():
                 inputs=[],
                 outputs=[model_file, index_file],
             )
-            model_file.select(
-                fn=lambda model_file_value: match_index(model_file_value),
-                inputs=[model_file],
-                outputs=[index_file],
-            )
-
     # Single inference tab
     with gr.Tab(i18n("Single")):
         with gr.Column():
@@ -596,10 +741,10 @@ def inference_tab():
                     interactive=True,
                 )
                 sid = gr.Dropdown(
-                    label=i18n("Speaker ID"),
-                    info=i18n("Select the speaker ID to use for the conversion."),
-                    choices=get_speakers_id(model_file.value),
-                    value=0,
+                    label=i18n(speaker_label),
+                    info=i18n("Select the singer to use for the conversion."),
+                    choices=get_speaker_choices(model_file.value),
+                    value=get_speaker_choices(model_file.value)[0],
                     interactive=True,
                 )
                 split_audio = gr.Checkbox(
@@ -1239,10 +1384,10 @@ def inference_tab():
                     interactive=True,
                 )
                 sid_batch = gr.Dropdown(
-                    label=i18n("Speaker ID"),
-                    info=i18n("Select the speaker ID to use for the conversion."),
-                    choices=get_speakers_id(model_file.value),
-                    value=0,
+                    label=i18n(speaker_label),
+                    info=i18n("Select the singer to use for the conversion."),
+                    choices=get_speaker_choices(model_file.value),
+                    value=get_speaker_choices(model_file.value)[0],
                     interactive=True,
                 )
                 split_audio_batch = gr.Checkbox(
@@ -2139,6 +2284,11 @@ def inference_tab():
         fn=filter_dropdowns,
         inputs=[filter_box_inf],
         outputs=[model_file, index_file],
+    )
+    model_file.select(
+        fn=update_model_selection,
+        inputs=[model_file],
+        outputs=[index_file, sid, sid_batch],
     )
     audio.change(
         fn=output_path_fn,

@@ -3,6 +3,9 @@ import os
 import shutil
 import sys
 
+# Disable Gradio analytics/telemetry for all launch modes.
+os.environ["GRADIO_ANALYTICS_ENABLED"] = "False"
+
 # We need the CWD for finding the config file, but while we're at it, add it to sys.path
 now_dir = os.getcwd()
 sys.path.append(now_dir)
@@ -63,10 +66,7 @@ from tabs.inference.inference import inference_tab
 from tabs.train.train import train_tab
 from tabs.extra.extra import extra_tab
 from tabs.report.report import report_tab
-from tabs.download.download import download_tab
-from tabs.tts.tts import tts_tab
 from tabs.voice_blender.voice_blender import voice_blender_tab
-from tabs.plugins.plugins import plugins_tab
 from tabs.settings.settings import settings_tab
 from tabs.realtime.realtime import realtime_tab
 
@@ -83,14 +83,6 @@ run_prerequisites_script(
 from assets.i18n.i18n import I18nAuto
 
 i18n = I18nAuto()
-
-# Start Discord presence if enabled
-from tabs.settings.sections.presence import load_config_presence
-
-if load_config_presence():
-    from assets.discord_presence import RPCManager
-
-    RPCManager.start_presence()
 
 # Check installation
 import assets.installation_checker as installation_checker
@@ -143,20 +135,11 @@ with gr.Blocks(
     with gr.Tab(i18n("Training")):
         train_tab()
 
-    with gr.Tab(i18n("TTS")):
-        tts_tab()
-
     with gr.Tab(i18n("Voice Blender")):
         voice_blender_tab()
 
     with gr.Tab(i18n("Realtime")):
         realtime_tab()
-
-    with gr.Tab(i18n("Plugins")):
-        plugins_tab()
-
-    with gr.Tab(i18n("Download")):
-        download_tab()
 
     with gr.Tab(i18n("Report a Bug")):
         report_tab()

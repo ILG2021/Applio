@@ -140,10 +140,33 @@ def rename_downloaded_files():
             os.rename(real_path, file_name.replace(os.path.sep, "_") + extension)
 
 
+def safe_extract(zip_ref, destination):
+    destination = os.path.abspath(destination)
+    for member in zip_ref.infolist():
+        member_name = member.filename.replace("\\\\", "/")
+        target = os.path.abspath(os.path.join(destination, member_name))
+
+        try:
+            is_within_destination = (
+                os.path.commonpath([destination, target]) == destination
+            )
+        except ValueError:
+            is_within_destination = False
+
+        if not is_within_destination:
+            raise ValueError(f"Unsafe ZIP member path: {member.filename}")
+
+        file_mode = (member.external_attr >> 16) & 0o170000
+        if file_mode == 0o120000:
+            raise ValueError(f"ZIP symlinks are not allowed: {member.filename}")
+
+    zip_ref.extractall(destination)
+
+
 def extract(zipfile_path, unzips_path):
     try:
         with zipfile.ZipFile(zipfile_path, "r") as zip_ref:
-            zip_ref.extractall(unzips_path)
+            safe_extract(zip_ref, unzips_path)
         os.remove(zipfile_path)
         return True
     except Exception as error:
@@ -155,7 +178,7 @@ def unzip_file(zip_path, zip_file_name):
     zip_file_path = os.path.join(zip_path, zip_file_name + ".zip")
     extract_path = os.path.join(file_path, zip_file_name)
     with zipfile.ZipFile(zip_file_path, "r") as zip_ref:
-        zip_ref.extractall(extract_path)
+        safe_extract(zip_ref, extract_path)
     os.remove(zip_file_path)
 
 
