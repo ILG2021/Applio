@@ -11,6 +11,7 @@ import torch
 
 from assets.i18n.i18n import I18nAuto
 from core import run_batch_infer_script, run_infer_script
+from rvc.lib.exposure import is_exposed, path_within
 from rvc.lib.utils import format_title
 from tabs.settings.sections.filter import get_filter_trigger, load_config_filter
 from tabs.settings.sections.restart import stop_infer
@@ -196,7 +197,9 @@ custom_embedders = [
 
 def update_sliders(preset):
     with open(
-        os.path.join(PRESETS_DIR, f"{preset}.json"), "r", encoding="utf-8"
+        os.path.join(PRESETS_DIR, f"{os.path.basename(str(preset))}.json"),
+        "r",
+        encoding="utf-8",
     ) as json_file:
         values = json.load(json_file)
     return (
@@ -209,7 +212,9 @@ def update_sliders(preset):
 
 def update_sliders_formant(preset):
     with open(
-        os.path.join(FORMANTSHIFT_DIR, f"{preset}.json"), "r", encoding="utf-8"
+        os.path.join(FORMANTSHIFT_DIR, f"{os.path.basename(str(preset))}.json"),
+        "r",
+        encoding="utf-8",
     ) as json_file:
         values = json.load(json_file)
     return (
@@ -238,8 +243,26 @@ def get_presets_data(pitch, index_rate, rms_mix_rate, protect):
     }
 
 
+def check_io_paths(input_path, output_path):
+    """Return an error message when inference paths leave assets/audios.
+
+    The output path field is hidden and the batch tab is invisible, but Gradio
+    still accepts any value for them through its API. When Applio is reachable
+    from other machines, every input and output path must stay in assets/audios.
+    Local-only use keeps the old behaviour of accepting any path.
+    """
+    if not is_exposed():
+        return None
+    for label, path in (("Input", input_path), ("Output", output_path)):
+        if not path_within(str(path or ""), audio_root):
+            return f"{label} path must be inside assets/audios."
+    return None
+
+
 def export_presets_button(preset_name, pitch, index_rate, rms_mix_rate, protect):
     if preset_name:
+        # The preset name is free text: keep it a plain file name in PRESETS_DIR.
+        preset_name = _safe_filename_part(os.path.basename(str(preset_name)))
         file_path = os.path.join(PRESETS_DIR, f"{preset_name}.json")
         presets_data = get_presets_data(pitch, index_rate, rms_mix_rate, protect)
         with open(file_path, "w", encoding="utf-8") as json_file:
@@ -1329,6 +1352,10 @@ def inference_tab():
                 message = "You must agree to the Terms of Use to proceed."
                 gr.Info(message)
                 return message, None
+            error = check_io_paths(args[5], args[6])
+            if error:
+                gr.Warning(error)
+                return error, None
             try:
                 return run_infer_script(*args)
             except Exception:
@@ -1343,6 +1370,10 @@ def inference_tab():
                 message = "You must agree to the Terms of Use to proceed."
                 gr.Info(message)
                 return message
+            error = check_io_paths(args[5], args[6])
+            if error:
+                gr.Warning(error)
+                return error
             try:
                 return run_batch_infer_script(*args)
             except Exception:

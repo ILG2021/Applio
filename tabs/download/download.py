@@ -15,6 +15,7 @@ sys.path.append(now_dir)
 
 from core import run_download_script
 from rvc.lib.utils import format_title
+from rvc.lib.tools.safe_http import safe_filename, safe_get, safe_head
 
 from assets.i18n.i18n import I18nAuto
 
@@ -105,13 +106,14 @@ def get_pretrained_sample_rates(model):
 
 
 def get_file_size(url):
-    response = requests.head(url)
+    response = safe_head(url)
     return int(response.headers.get("content-length", 0))
 
 
 def download_file(url, destination_path, progress_bar):
     os.makedirs(os.path.dirname(destination_path), exist_ok=True)
-    response = requests.get(url, stream=True)
+    response = safe_get(url, stream=True)
+    response.raise_for_status()
     block_size = 1024
     with open(destination_path, "wb") as file:
         for data in response.iter_content(block_size):
@@ -126,7 +128,7 @@ def download_pretrained_model(model, sample_rate, url_g="", url_d=""):
 
     if url_g or url_d:
         tasks = [
-            (u, os.path.join(save_path, os.path.basename(u)))
+            (u, os.path.join(save_path, safe_filename(u, "pretrained.pth")))
             for u in [url_g, url_d]
             if u
         ]

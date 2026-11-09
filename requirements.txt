@@ -22,21 +22,21 @@ soxr
 # Machine learning and deep learning
 omegaconf>=2.0.6; sys_platform == 'darwin'
 numba==0.65.0
-torch==2.7.1; sys_platform == 'darwin'
-torch==2.7.1+cu128; sys_platform == 'linux' or sys_platform == 'win32'
-torchaudio==2.7.1; sys_platform == 'darwin'
-torchaudio==2.7.1+cu128; sys_platform == 'linux' or sys_platform == 'win32'
-torchvision==0.22.1; sys_platform == 'darwin'
-torchvision==0.22.1+cu128; sys_platform == 'linux' or sys_platform == 'win32'
+torch==2.11.0; sys_platform == 'darwin'
+torch==2.11.0+cu128; sys_platform == 'linux' or sys_platform == 'win32'
+torchaudio==2.11.0; sys_platform == 'darwin'
+torchaudio==2.11.0+cu128; sys_platform == 'linux' or sys_platform == 'win32'
+torchvision==0.26.0; sys_platform == 'darwin'
+torchvision==0.26.0+cu128; sys_platform == 'linux' or sys_platform == 'win32'
 torchcrepe
 torchfcpe
 einops
-transformers==5.4.0
+transformers==5.22.2
 
 # Visualization and UI
 matplotlib==3.10.8
 tensorboard
-gradio==5.50.0
+gradio==6.31.0
 
 # Miscellaneous utilities
 certifi>=2026.2.25; sys_platform == 'darwin'
@@ -44,5 +44,7 @@ antlr4-python3-runtime==4.13.2; sys_platform == 'darwin'
 tensorboardX
 beautifulsoup4
 sounddevice
+# WebSocket support for the realtime client API (no longer pulled in by Gradio 6)
+websockets==15.0.1
 webrtcvad-wheels
 psutil

@@ -60,7 +60,25 @@ def save_existing_folders(existing_folders):
         json.dump(config, file, indent=2, ensure_ascii=False)
 
 
+def plugin_install_allowed():
+    """Installing a plugin runs arbitrary code (pip install + import), so it is
+    only allowed when Applio is reachable from this machine alone, unless the
+    operator explicitly opts in with APPLIO_ALLOW_PLUGIN_INSTALL=1."""
+    from rvc.lib.exposure import is_exposed
+
+    if os.environ.get("APPLIO_ALLOW_PLUGIN_INSTALL") == "1":
+        return True
+    return not is_exposed()
+
+
 def save_plugin_dropbox(dropbox):
+    if not plugin_install_allowed():
+        if dropbox and os.path.exists(dropbox):
+            os.remove(dropbox)
+        raise gr.Error(
+            message="Plugin installation is disabled because Applio is reachable from other machines. "
+            "Run Applio on 127.0.0.1 without --share, or set APPLIO_ALLOW_PLUGIN_INSTALL=1."
+        )
     if "zip" not in dropbox:
         raise gr.Error(
             message="The file you dropped is not a valid plugin.zip. Please try again."
@@ -70,9 +88,6 @@ def save_plugin_dropbox(dropbox):
         folder_name = file_name.split(".zip")[0]
         folder_path = os.path.join(plugins_path, folder_name)
         zip_file_path = os.path.join(plugins_path, file_name)
-
-        if os.path.exists(folder_name):
-            os.remove(folder_name)
 
         shutil.move(dropbox, os.path.join(plugins_path, file_name))
         print("Proceeding with the extraction...")

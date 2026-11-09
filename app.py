@@ -95,6 +95,18 @@ import assets.themes.loadThemes as loadThemes
 my_applio = loadThemes.load_theme() or "ParityError/Interstellar"
 client_mode = "--client" in sys.argv
 
+
+def load_realtime_js() -> str:
+    """Read the realtime client script with the per-process API token embedded."""
+    from rvc.realtime.security import inject_token
+
+    return inject_token(
+        pathlib.Path(os.path.join(now_dir, "tabs", "realtime", "main.js")).read_text(
+            encoding="utf-8"
+        )
+    )
+
+
 # Define Gradio interface
 with gr.Blocks(
     title="Applio",
@@ -103,13 +115,7 @@ with gr.Blocks(
             "theme": my_applio,
             "css": "footer{display:none !important}",
             "js": (
-                (
-                    "() => {\n"
-                    + pathlib.Path(
-                        os.path.join(now_dir, "tabs", "realtime", "main.js")
-                    ).read_text()
-                    + "\n}"
-                )
+                ("() => {\n" + load_realtime_js() + "\n}")
                 if client_mode
                 else None
             ),
@@ -169,13 +175,7 @@ def launch_gradio(server_name: str, server_port: int) -> None:
             {
                 "theme": my_applio,
                 "css": "footer{display:none !important}",
-                "js": (
-                    pathlib.Path(
-                        os.path.join(now_dir, "tabs", "realtime", "main.js")
-                    ).read_text()
-                    if client_mode
-                    else None
-                ),
+                "js": (load_realtime_js() if client_mode else None),
             }
             if GRADIO_6
             else {}

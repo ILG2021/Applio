@@ -101,6 +101,20 @@ def load_theme():
         return None
 
 
+def current_theme_name():
+    """Name of the selected theme as listed by get_theme_list() (a string,
+    unlike load_theme(), which returns the theme object)."""
+    try:
+        config_data = read_json_file(config_file)
+        selected_file = config_data["theme"]["file"]
+        if selected_file:
+            return os.path.splitext(selected_file)[0]
+        return config_data["theme"]["class"] or "ParityError/Interstellar"
+    except Exception as error:
+        print(f"An error occurred reading the theme name: {error}")
+        return "ParityError/Interstellar"
+
+
 def read_current_theme():
     """Read the current theme class from the configuration file."""
     try:

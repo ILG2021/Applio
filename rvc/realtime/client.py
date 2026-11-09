@@ -8,16 +8,36 @@ import torch
 now_dir = os.getcwd()
 sys.path.append(now_dir)
 
+from fastapi.responses import JSONResponse
+
 from .core import VoiceChanger, AUDIO_SAMPLE_RATE
+from . import security
 
 app = FastAPI()
 vc_instance = None
 params = {}
 
+# 1008 = policy violation
+WS_POLICY_VIOLATION = 1008
+
+
+async def _ws_authorized(ws: WebSocket) -> bool:
+    """Reject cross-site WebSocket connections before accepting them."""
+    if not security.origin_allowed(ws.headers) or not security.token_valid(
+        ws.query_params.get("token")
+    ):
+        print("[WS] Rejected unauthorized realtime connection.")
+        await ws.close(code=WS_POLICY_VIOLATION)
+        return False
+    return True
+
 
 @app.websocket("/change-config")
 async def change_config(ws: WebSocket):
     global vc_instance, params
+
+    if not await _ws_authorized(ws):
+        return
 
     await ws.accept()
 
@@ -26,6 +46,14 @@ async def change_config(ws: WebSocket):
 
     text = await ws.receive_text()
     jsons = json.loads(text)
+
+    if not jsons["if_kwargs"]:
+        try:
+            security.check_param(jsons["key"], jsons["value"])
+        except security.ValidationError as error:
+            print(f"[WS] Rejected config change: {error}")
+            await ws.close(code=WS_POLICY_VIOLATION)
+            return
 
     if jsons["if_kwargs"]:
         params["kwargs"][jsons["key"]] = jsons["value"]
@@ -213,10 +241,29 @@ async def change_config(ws: WebSocket):
 async def record(request: Request):
     global vc_instance
 
+    # A custom header cannot be sent cross-origin without a CORS preflight,
+    # which this API never approves; the token proves the caller is Applio's page.
+    if not security.origin_allowed(request.headers) or not security.token_valid(
+        request.headers.get(security.TOKEN_HEADER)
+    ):
+        return JSONResponse({"detail": "Forbidden"}, status_code=403)
+    if "application/json" not in request.headers.get("content-type", ""):
+        return JSONResponse({"detail": "Unsupported media type"}, status_code=415)
+
     data = await request.json()
     record_button = data.get("record_button", "Stop")
     record_audio_path = data.get("record_audio_path", None)
     export_format = data.get("export_format", "WAV")
+
+    try:
+        security.check_record(record_audio_path, export_format)
+    except security.ValidationError as error:
+        return {
+            "type": "warnings",
+            "value": str(error),
+            "button": "Start",
+            "path": None,
+        }
 
     if vc_instance is None:
         return {
@@ -259,13 +306,29 @@ async def record(request: Request):
 @app.websocket("/ws-audio")
 async def websocket_audio(ws: WebSocket):
     global vc_instance, params
+
+    if not await _ws_authorized(ws):
+        return
+
     await ws.accept()
 
     print("[WS] Connected!")
 
+    # Validate before entering the try block: its finally clause tears down the
+    # running voice changer, which a rejected connection must not do.
     try:
-        text = await ws.receive_text()
-        params = json.loads(text)
+        new_params = json.loads(await ws.receive_text())
+        security.check_params(new_params)
+    except (security.ValidationError, ValueError, WebSocketDisconnect) as error:
+        print(f"[WS] Rejected realtime parameters: {error}")
+        try:
+            await ws.close(code=WS_POLICY_VIOLATION)
+        except Exception:
+            pass
+        return
+
+    try:
+        params = new_params
 
         read_chunk_size = int(params["chunk_size"])
         block_frame = read_chunk_size * 128

@@ -13,6 +13,7 @@ sys.path.append(now_dir)
 
 from rvc.lib.utils import format_title
 from rvc.lib.tools import gdown
+from rvc.lib.tools.safe_http import safe_filename, safe_get, validate_url
 
 file_path = os.path.join(now_dir, "logs")
 zips_path = os.path.join(file_path, "zips")
@@ -34,6 +35,7 @@ def search_pth_index(folder):
 
 
 def download_from_url(url):
+    validate_url(url)
     os.chdir(zips_path)
 
     try:
@@ -72,7 +74,7 @@ def extract_google_drive_id(url):
 def download_blob_or_resolve(url):
     if "/blob/" in url:
         url = url.replace("/blob/", "/resolve/")
-    response = requests.get(url, stream=True)
+    response = safe_get(url, stream=True)
     if response.status_code == 200:
         save_response_content(response)
     else:
@@ -83,13 +85,10 @@ def download_blob_or_resolve(url):
 
 def save_response_content(response):
     content_disposition = unquote(response.headers.get("Content-Disposition", ""))
-    file_name = (
-        re.search(r'filename="([^"]+)"', content_disposition)
-        .groups()[0]
-        .replace(os.path.sep, "_")
-        if content_disposition
-        else "downloaded_file"
-    )
+    match = re.search(r'filename="([^"]+)"', content_disposition)
+    # The name comes from the remote server: strip any directory components
+    # (both / and \ on Windows) so it cannot escape zips_path.
+    file_name = safe_filename(match.group(1) if match else "")
 
     total_size = int(response.headers.get("Content-Length", 0))
     chunk_size = 1024
@@ -103,7 +102,7 @@ def save_response_content(response):
 
 
 def download_from_huggingface(url):
-    response = requests.get(url)
+    response = safe_get(url)
     soup = BeautifulSoup(response.content, "html.parser")
     temp_url = next(
         (
@@ -123,7 +122,7 @@ def download_from_huggingface(url):
 
 
 def download_file(url):
-    response = requests.get(url, stream=True)
+    response = safe_get(url, stream=True)
     if response.status_code == 200:
         save_response_content(response)
     else:

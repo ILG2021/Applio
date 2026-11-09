@@ -1,3 +1,6 @@
+// Replaced at startup by app.py with the per-process realtime API token.
+const APPLIO_REALTIME_TOKEN = "__APPLIO_REALTIME_TOKEN__";
+
 window._activeStream = null;
 window._audioCtx = null;
 window._workletNode = null;
@@ -364,7 +367,8 @@ window.StreamAudioRealtime = async function (
       "//" +
       location.hostname +
       `:${location.port}` +
-      "/api/ws-audio";
+      "/api/ws-audio?token=" +
+      encodeURIComponent(APPLIO_REALTIME_TOKEN);
     const ws = new WebSocket(wsUrl);
 
     // Set new values ​​of buttons to avoid users initiating multiple realtime threads
@@ -503,7 +507,8 @@ window.ChangeConfig = async function (value, key, if_kwargs = false) {
       "//" +
       location.hostname +
       `:${location.port}` +
-      "/api/change-config";
+      "/api/change-config?token=" +
+      encodeURIComponent(APPLIO_REALTIME_TOKEN);
     const ws = new WebSocket(wsUrl);
 
     ws.binaryType = "arraybuffer";
@@ -576,6 +581,7 @@ window.SoundfileRecordAudio = async function (
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      "X-Applio-Token": APPLIO_REALTIME_TOKEN,
     },
     body: JSON.stringify({
       record_button: RecordButton,
